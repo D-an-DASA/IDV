@@ -7,7 +7,6 @@ import streamlit as st
 
 st.set_page_config(
     page_title="Cardiovascular Risk Dashboard",
-    page_icon="❤️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -166,7 +165,7 @@ st.markdown(
 
 with st.sidebar:
 
-    st.markdown("## ❤️ CardioView")
+    st.markdown("## CardioView")
     st.caption("Population health")
 
     st.divider()
@@ -292,11 +291,6 @@ with header_col:
         unsafe_allow_html=True,
     )
 
-with action_col:
-
-    st.caption("LAST UPDATED")
-    st.write("—")
-    st.button("↓ Export", use_container_width=True)
 
 
 # ============================================================

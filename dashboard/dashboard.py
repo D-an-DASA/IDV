@@ -1,5 +1,16 @@
 import streamlit as st
 
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            div[data-testid="stToolbar"] {visibility: hidden;}
+            div[data-testid="stDecoration"] {visibility: hidden;}
+            div[data-testid="stStatusWidget"] {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ============================================================
 # PAGE CONFIG
@@ -657,8 +668,8 @@ st.markdown(
             for analytical use only.
         </span>
 
-        <span>
-            Model — 
+        <span>x
+            Model —     
         </span>
     </div>
     """,

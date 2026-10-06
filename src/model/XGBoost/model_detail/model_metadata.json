@@ -1,0 +1,47 @@
+{
+    "model_name": "XGBoost Model 4",
+    "target": "HeartDiseaseorAttack",
+    "threshold": 0.2,
+    "features": [
+        "HighBP",
+        "HighChol",
+        "CholCheck",
+        "BMI",
+        "Smoker",
+        "Stroke",
+        "Diabetes",
+        "PhysActivity",
+        "Fruits",
+        "Veggies",
+        "HvyAlcoholConsump",
+        "AnyHealthcare",
+        "NoDocbcCost",
+        "GenHlth",
+        "MentHlth",
+        "PhysHlth",
+        "DiffWalk",
+        "Sex",
+        "Age",
+        "Education",
+        "Income"
+    ],
+    "hyperparameters": {
+        "learning_rate": 0.1,
+        "n_estimators": 450,
+        "max_depth": 3,
+        "subsample": 0.9,
+        "colsample_bytree": 0.8,
+        "min_child_weight": 400,
+        "gamma": 0.1,
+        "reg_alpha": 0,
+        "reg_lambda": 2
+    },
+    "test_metrics": {
+        "accuracy": 0.8697063447786174,
+        "precision": 0.33568474823643885,
+        "recall": 0.5514485514485514,
+        "f1": 0.41732819233386254,
+        "roc_auc": 0.8615571589050701,
+        "pr_auc": 0.37712175062559006
+    }
+}

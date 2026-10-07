@@ -1,0 +1,52 @@
+{
+    "model_name": "Logistic Regression",
+    "model_version": "final",
+    "model_file": "logistic_regression_final.pkl",
+    "task": "Binary Classification",
+    "target": "HeartDiseaseorAttack",
+    "dataset": {
+        "name": "BRFSS 2015 Heart Disease Health Indicators",
+        "rows": 253680,
+        "features": 21,
+        "target_classes": [
+            0,
+            1
+        ]
+    },
+    "preprocessing": {
+        "missing_values": "Rows with missing values were removed",
+        "scaling": "StandardScaler",
+        "scaler_fitted_on": "Training set only"
+    },
+    "training": {
+        "train_test_split": "80/20",
+        "random_state": 42,
+        "stratify": true,
+        "cross_validation": "3-fold GridSearchCV"
+    },
+    "hyperparameters": {
+        "C": 0.3,
+        "penalty": "l2",
+        "class_weight": {
+            "0": 1,
+            "1": 4
+        },
+        "max_iter": 1000
+    },
+    "threshold": {
+        "value": 0.37,
+        "selection_strategy": "Maximize precision subject to recall >= 0.70",
+        "selected_on": "Training set"
+    },
+    "evaluation": {
+        "accuracy": 0.8035,
+        "precision": 0.2827,
+        "recall": 0.7064,
+        "f1_score": 0.4038,
+        "roc_auc": 0.847,
+        "pr_auc": 0.363,
+        "log_loss": 0.3244
+    },
+    "selection_reason": "Prioritize recall for cardiovascular risk detection while maintaining a reasonable balance between precision and recall.",
+    "status": "final"
+}

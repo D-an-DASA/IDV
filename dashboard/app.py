@@ -29,7 +29,7 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .block-container { max-width: 1550px; padding-top: 2rem; padding-bottom: 3rem; }
+    .block-container { max-width: 1550px; padding-top: 4rem; padding-bottom: 3rem; }
     .eyebrow {
         font-size: 0.75rem;
         font-weight: 700;
@@ -140,7 +140,7 @@ def load():
     d["Sex_lbl"] = d.Sex.map({0: "Nữ", 1: "Nam"})
     d["Inc_lbl"] = pd.Categorical(d.Income.map(INC_LBL), list(INC_LBL.values()), ordered=True)
     d["Edu_lbl"] = pd.Categorical(d.Education.map(EDU_LBL), list(EDU_LBL.values()), ordered=True)
-    d["Bệnh tim"] = d[TARGET].map({0: "Không bệnh tim", 1: "Bệnh tim"})
+    d["Bệnh tim"] = d[TARGET].map({0: "Không có tiền sử", 1: "Có tiền sử bệnh tim/đau tim"})
     return d
 
 
@@ -360,14 +360,14 @@ def rate_yes_no(d, cols):
         for v, name in [(1, "Có"), (0, "Không")]:
             m = d[TARGET][s.reindex(d.index) == v]
             rows.append((lbl, name, m.mean() * 100 if len(m) else np.nan))
-    return pd.DataFrame(rows, columns=["Yếu tố", "Tình trạng", "Tỷ lệ bệnh tim (%)"])
+    return pd.DataFrame(rows, columns=["Yếu tố", "Tình trạng", "Tỷ lệ có tiền sử bệnh tim/đau tim (%)"])
 
 
 def yn_bar(d, cols, title):
     fig = px.bar(
         rate_yes_no(d, cols),
         x="Yếu tố",
-        y="Tỷ lệ bệnh tim (%)",
+        y="Tỷ lệ có tiền sử bệnh tim/đau tim (%)",
         color="Tình trạng",
         barmode="group",
         title=title,
@@ -386,9 +386,8 @@ st.markdown('<div class="eyebrow">HỆ THỐNG TRỰC QUAN HÓA THÔNG TIN Y T�
 st.markdown('<div class="page-title">Bảng Điều Khiển Phân Tích & Dự Đoán Nguy Cơ Tim Mạch</div>',
             unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub">Khám phá toàn diện phân bố không gian địa lý, tương quan nhân khẩu học, '
-    'bệnh lý lâm sàng, lối sống và phân tầng nguy cơ tim mạch dựa trên Machine Learning. '
-    'Hỗ trợ lọc đa cấp, Drill-down Treemap và Cross-filtering (nhấp vào cột/lát cắt/bản đồ để lọc chéo).</div>',
+    '<div class="sub">Khám phá phân bố địa lý, đặc điểm nhân khẩu học, tiền sử sức khỏe và lối sống; '
+    'đồng thời đánh giá mô hình Logistic Regression và ước tính nguy cơ cá nhân.</div>',
     unsafe_allow_html=True
 )
 
@@ -425,11 +424,11 @@ with k[0].container(height=165):
     st.metric("Tổng số bản ghi", f"{len(df):,}", help="Số người tham gia khảo sát phù hợp bộ lọc")
 with k[1].container(height=165):
     st.metric(
-        "Tỷ lệ bệnh tim mạch",
+        "Tỷ lệ có tiền sử bệnh tim/đau tim",
         f"{curr_rate:.1f}%",
         delta=f"{delta_nat:+.1f}% so với toàn quốc",
         delta_color="inverse",
-        help="Tỷ lệ người mắc bệnh tim hoặc từng đau tim trong mẫu"
+        help="Tỷ lệ người tham gia khảo sát có tiền sử bệnh tim hoặc từng đau tim trong mẫu"
     )
 with k[2].container(height=165):
     st.metric("Nhóm tuổi chiếm ưu thế", str(df.Age_lbl.value_counts().idxmax()),
@@ -447,7 +446,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 with st.container(border=True):
     st.markdown("### 1. 🗺️ Bản đồ Địa lý: Phân bố Không gian Nguy cơ Tim mạch `[Click để chọn bang]`")
     st.caption(
-        "Bản đồ Choropleth thể hiện tỷ lệ mắc bệnh tim mạch trên toàn bộ 53 bang/vùng lãnh thổ của Hoa Kỳ. Bấm trực tiếp vào một bang trên bản đồ để lọc dữ liệu.")
+        "Bản đồ Choropleth thể hiện tỷ lệ người tham gia có tiền sử bệnh tim/đau tim trên toàn bộ 53 bang/vùng lãnh thổ của Hoa Kỳ. Bấm trực tiếp vào một bang trên bản đồ để lọc dữ liệu.")
 
     # Fix 4: state_agg tính từ base_geo (toàn bộ các bang) để giữ nguyên ngữ cảnh toàn quốc
     state_agg = base_geo.groupby("StateName", observed=True)[TARGET].agg(
@@ -479,9 +478,9 @@ with st.container(border=True):
             },
             color_continuous_scale="Reds",
             labels={
-                "TyLe_pct": "Tỷ lệ bệnh tim (%)",
+                "TyLe_pct": "Tỷ lệ có tiền sử bệnh tim/đau tim (%)",
                 "TongSo": "Số mẫu khảo sát",
-                "SoCa": "Số ca bệnh tim"
+                "SoCa": "Số trường hợp có tiền sử bệnh tim/đau tim"
             }
         )
         fig_map.update_layout(
@@ -541,7 +540,7 @@ r1a, r1b = st.columns(2)
 
 with r1a.container(border=True):
     # Chart 2: Bar Chart with Cross-filter
-    st.markdown("**Biểu đồ Cột: Tỷ lệ bệnh tim theo Nhóm tuổi** `[Cross-filter]`")
+    st.markdown("**Biểu đồ Cột: Tỷ lệ có tiền sử bệnh tim/đau tim theo Nhóm tuổi** `[Cross-filter]`")
     st.caption("Bấm chọn vào cột để lọc chéo theo nhóm tuổi")
     d_age = by_sex(base)
     rate_age = d_age.groupby("Age_lbl", observed=False)[TARGET].mean().reindex(AGE_ORDER) * 100
@@ -551,13 +550,13 @@ with r1a.container(border=True):
             x=AGE_ORDER,
             y=rate_age.values,
             marker_color=colors_age,
-            name="Tỷ lệ bệnh tim (%)",
+            name="Tỷ lệ có tiền sử bệnh tim/đau tim (%)",
             text=[f"{v:.1f}%" for v in rate_age.values],
             textposition="outside",
-            hovertemplate="<b>Nhóm tuổi %{x}</b><br>Tỷ lệ bệnh tim: %{y:.2f}%<extra></extra>"
+            hovertemplate="<b>Nhóm tuổi %{x}</b><br>Tỷ lệ có tiền sử: %{y:.2f}%<extra></extra>"
         )
     )
-    fig_age.update_layout(yaxis_title="Tỷ lệ bệnh tim (%)", xaxis_title="Nhóm tuổi", showlegend=False)
+    fig_age.update_layout(yaxis_title="Tỷ lệ có tiền sử bệnh tim/đau tim (%)", xaxis_title="Nhóm tuổi", showlegend=False)
     st.plotly_chart(
         sty(fig_age, 340),
         key=AGE_KEY,
@@ -589,7 +588,7 @@ with r1b.container(border=True):
             sort=False,
             marker=dict(colors=["#f472b6", "#38bdf8"]),
             textinfo="label+percent",
-            hovertemplate="<b>Giới tính: %{label}</b><br>Số ca bệnh tim: %{value:,}<br>Tỷ trọng ca bệnh: %{percent}<extra></extra>"
+            hovertemplate="<b>Giới tính: %{label}</b><br>Số ca có tiền sử: %{value:,}<br>Tỷ trọng ca bệnh: %{percent}<extra></extra>"
         )
     )
     fig_sex.update_layout(legend_title_text="Giới tính")
@@ -612,19 +611,19 @@ r2a, r2b = st.columns(2)
 with r2a.container(border=True):
     # Chart 4: Line Chart with Markers
     st.markdown("**Biểu đồ Đường: Xu hướng nguy cơ theo Độ tuổi × Tiền sử Cao huyết áp**")
-    st.caption("So sánh tốc độ gia tăng nguy cơ tim mạch theo tuổi thọ giữa người huyết áp cao và bình thường.")
+    st.caption("So sánh tỷ lệ có tiền sử bệnh tim/đau tim theo tuổi giữa người huyết áp cao và bình thường.")
     g_line = (
         df.dropna(subset=["HighBP"])
         .assign(BP=lambda x: x.HighBP.map({0: "Bình thường",1: "Cao"}))
         .groupby(["Age_lbl", "BP"], observed=True)[TARGET]
         .mean()
         .mul(100)
-        .reset_index(name="Tỷ lệ bệnh tim (%)")
+        .reset_index(name="Tỷ lệ có tiền sử bệnh tim/đau tim (%)")
     )
     fig_line = px.line(
         g_line,
         x="Age_lbl",
-        y="Tỷ lệ bệnh tim (%)",
+        y="Tỷ lệ có tiền sử bệnh tim/đau tim (%)",
         color="BP",
         markers=True,
         labels={"Age_lbl": "Nhóm tuổi"},
@@ -645,13 +644,13 @@ with r2a.container(border=True):
             x=0.5
         ),
         margin=dict(b=80)
-    )    
+    )
     st.plotly_chart(sty(fig_line, 330), use_container_width=True)
 
 with r2b.container(border=True):
     # Charts 5 & 6: Histogram & Box Plot with Tabs
     # Fix 8: Chuẩn hóa nhãn Tabs là "Chuyển đổi góc nhìn trực quan", giải thích đúng khoảng BMI 12 - 60
-    st.markdown("**Phân tích Thể trạng: Chỉ số BMI theo Tình trạng Bệnh tim**")
+    st.markdown("**Phân tích Thể trạng: Chỉ số BMI theo Tiền sử bệnh tim/đau tim**")
     tab_dist, tab_box = st.tabs(["📊 Phân bố tần suất (Histogram)", "📦 Biểu đồ Hộp & Điểm phân vị (Box Plot)"])
     dd_bmi = df.dropna(subset=["BMI"])
 
@@ -665,7 +664,7 @@ with r2b.container(border=True):
             barmode="overlay",
             histnorm="percent",
             opacity=0.68,
-            color_discrete_map={"Bệnh tim": "#ef4444", "Không bệnh tim": "#38bdf8"}
+            color_discrete_map={"Có tiền sử bệnh tim/đau tim": "#ef4444", "Không có tiền sử": "#38bdf8"}
         )
         fig_hist.update_layout(
             legend_title_text="Nhóm",
@@ -682,11 +681,11 @@ with r2b.container(border=True):
             y="BMI",
             color="Bệnh tim",
             points="outliers",
-            color_discrete_map={"Bệnh tim": "#ef4444", "Không bệnh tim": "#38bdf8"}
+            color_discrete_map={"Có tiền sử bệnh tim/đau tim": "#ef4444", "Không có tiền sử": "#38bdf8"}
         )
         fig_box.update_layout(
             legend_title_text="Nhóm",
-            xaxis_title="Tình trạng bệnh tim",
+            xaxis_title="Tình trạng tiền sử bệnh tim/đau tim",
             yaxis_title="BMI (kg/m²) [Giới hạn hợp lệ 12–60]"
         )
         st.plotly_chart(sty(fig_box, 290), use_container_width=True)
@@ -711,7 +710,7 @@ with r3a.container(border=True):
             "Khó đi lại": df.DiffWalk,
             "Tiểu đường": df.Diabetes.map({0: 0, 1: 0, 2: 1})
         }
-        st.plotly_chart(yn_bar(df, conds, "Tỷ lệ bệnh tim theo từng bệnh lý nền kèm theo"), use_container_width=True)
+        st.plotly_chart(yn_bar(df, conds, "Tỷ lệ có tiền sử bệnh tim/đau tim theo từng yếu tố sức khỏe"), use_container_width=True)
 
     with tab_scat:
         # Chart 7: Scatter / Bubble Chart
@@ -731,13 +730,13 @@ with r3a.container(border=True):
             color="GH",
             hover_name="Age_lbl",
             labels={
-                "Rate": "Tỷ lệ bệnh tim (%)",
+                "Rate": "Tỷ lệ có tiền sử bệnh tim/đau tim (%)",
                 "GH": "Sức khỏe tự đánh giá",
                 "Records": "Số bản ghi",
                 "BMI": "BMI trung bình"
             },
             category_orders={"GH": list(GEN_LBL.values())},
-            title="Tương quan BMI - Tỷ lệ bệnh tim theo Nhóm Sức khỏe"
+            title="Tương quan BMI - Tỷ lệ có tiền sử bệnh tim/đau tim theo Nhóm Sức khỏe"
         )
         st.plotly_chart(sty(fig_scat, 320), use_container_width=True)
 
@@ -750,7 +749,7 @@ with r3b.container(border=True):
         "Ăn rau củ": df.Veggies,
         "Uống rượu nhiều": df.HvyAlcoholConsump
     }
-    st.plotly_chart(yn_bar(df, life_factors, "Tỷ lệ bệnh tim giữa nhóm Có vs Không theo lối sống"),
+    st.plotly_chart(yn_bar(df, life_factors, "Tỷ lệ có tiền sử bệnh tim/đau tim giữa nhóm Có và Không theo lối sống"),
                     use_container_width=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -765,7 +764,7 @@ with r4a.container(border=True):
     # Chart 8: Treemap with Hierarchical Drill-down (Fix 8: Đúng nghĩa Drill-down phân cấp)
     st.markdown("**Biểu đồ Cây Phân cấp: Thu nhập × Học vấn (Treemap)** `[Drill-down Phân cấp]`")
     st.caption(
-        "Nhấp chuột vào từng khối Thu nhập để đào sâu (Drill-down) vào các bậc Học vấn bên trong. Kích thước = Số bản ghi, Màu = Tỷ lệ bệnh tim.")
+        "Nhấp chuột vào từng khối Thu nhập để đào sâu (Drill-down) vào các bậc Học vấn bên trong. Kích thước = Số bản ghi, Màu = Tỷ lệ có tiền sử bệnh tim/đau tim.")
     tm_df = (
         df.groupby(["Inc_lbl", "Edu_lbl"], observed=True)
         .agg(Records=(TARGET, "size"), Rate=(TARGET, "mean"))
@@ -779,7 +778,7 @@ with r4a.container(border=True):
         color="Rate",
         color_continuous_scale="RdYlGn_r",
         labels={
-            "Rate": "Tỷ lệ bệnh tim (%)",
+            "Rate": "Tỷ lệ có tiền sử bệnh tim/đau tim (%)",
             "Records": "Số bản ghi",
             "Inc_lbl": "Mức thu nhập",
             "Edu_lbl": "Trình độ học vấn"
@@ -793,7 +792,7 @@ with r4a.container(border=True):
 with r4b.container(border=True):
     # Chart 9: Heatmap
     st.markdown("**Bản đồ Nhiệt Ma trận: Tương tác Huyết áp cao × Cholesterol cao**")
-    st.caption("Đánh giá hiệu ứng cộng gộp nguy cơ tim mạch khi mắc đồng thời 2 yếu tố nguy cơ tim mạch hàng đầu.")
+    st.caption("So sánh tỷ lệ có tiền sử bệnh tim/đau tim khi đồng thời có huyết áp cao và cholesterol cao.")
     h_data = df.dropna(subset=["HighBP", "HighChol"])
     piv = (
         h_data.groupby(["HighBP", "HighChol"])[TARGET]
@@ -810,7 +809,7 @@ with r4b.container(border=True):
         text_auto=".1f",
         color_continuous_scale="Reds",
         aspect="auto",
-        labels={"color": "Tỷ lệ bệnh tim (%)"}
+        labels={"color": "Tỷ lệ có tiền sử bệnh tim/đau tim (%)"}
     )
     fig_heat.update_traces(
         hovertemplate="Huyết áp: %{y}<br>Cholesterol: %{x}<br>Tỷ lệ bệnh tim: %{z:.2f}%<extra></extra>"
@@ -891,8 +890,8 @@ with c1.container(border=True):
     hist_df = pd.DataFrame({
         "Xác suất dự đoán (%)": p_test.values * 100,
         "Tình trạng thực tế": y_test.map({
-            0: "Không bệnh tim",
-            1: "Bệnh tim"
+            0: "Không có tiền sử",
+            1: "Có tiền sử bệnh tim/đau tim"
         }).values
     })
 
@@ -905,8 +904,8 @@ with c1.container(border=True):
         opacity=0.65,
         histnorm="percent",
         color_discrete_map={
-            "Không bệnh tim": "#38bdf8",
-            "Bệnh tim": "#ef4444"
+            "Không có tiền sử": "#38bdf8",
+            "Có tiền sử bệnh tim/đau tim": "#ef4444"
         },
         labels={
             "Xác suất dự đoán (%)": "Xác suất nguy cơ dự đoán (%)",
@@ -942,8 +941,8 @@ with c2.container(border=True):
     violin_df = pd.DataFrame({
         "Xác suất nguy cơ (%)": p_test.values * 100,
         "Tình trạng thực tế": y_test.map({
-            0: "Không bệnh tim",
-            1: "Bệnh tim"
+            0: "Không có tiền sử",
+            1: "Có tiền sử bệnh tim/đau tim"
         }).values
     })
 
@@ -955,8 +954,8 @@ with c2.container(border=True):
         box=True,
         points=False,
         color_discrete_map={
-            "Không bệnh tim": "#38bdf8",
-            "Bệnh tim": "#ef4444"
+            "Không có tiền sử": "#38bdf8",
+            "Có tiền sử bệnh tim/đau tim": "#ef4444"
         },
         labels={
             "Tình trạng thực tế": "Tình trạng thực tế",
@@ -1069,7 +1068,7 @@ st.markdown("### 7. 🩺 Dự đoán nguy cơ cá nhân")
 
 st.caption(
     "Nhập thông tin sức khỏe và lối sống để mô hình Logistic Regression "
-    "ước tính nguy cơ mắc bệnh tim mạch."
+    "ước tính xác suất thuộc nhóm có tiền sử bệnh tim/đau tim."
 )
 
 with st.container(border=True):
@@ -1262,9 +1261,9 @@ with st.container(border=True):
         )
         st.markdown(
             f"""
-            <div role="img" aria-label="Xác suất nguy cơ {risk_percent:.1f}%">
+            <div role="img" aria-label="Xác suất ước tính theo mô hình {risk_percent:.1f}%">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.5rem;">
-                    <span style="font-weight:600;">Xác suất nguy cơ</span>
+                    <span style="font-weight:600;">Xác suất ước tính theo mô hình</span>
                     <span style="font-size:1.5rem;font-weight:700;">{risk_percent:.1f}%</span>
                 </div>
                 <div style="display:flex;height:18px;overflow:hidden;border-radius:9px;gap:2px;">
@@ -1279,9 +1278,13 @@ with st.container(border=True):
         )
 
         if prediction == 1:
-            st.error( f"⚠️ Nguy cơ cao — xác suất {risk_probability:.1%} " f"≥ ngưỡng {threshold_input:.0%}" )
+            st.error( f"⚠️ Mô hình ước tính nguy cơ ở mức cao — xác suất {risk_probability:.1%} " f"≥ ngưỡng {threshold_input:.0%}" )
         else:
-            st.success( f"✅ Nguy cơ thấp — xác suất {risk_probability:.1%} " f"< ngưỡng {threshold_input:.0%}" )
+            st.success( f"✅ Mô hình ước tính nguy cơ ở mức thấp — xác suất {risk_probability:.1%} " f"< ngưỡng {threshold_input:.0%}" )
+        st.warning(
+            "Kết quả chỉ mang tính chất sàng lọc và hỗ trợ tham khảo, "
+            "không thay thế cho chẩn đoán hoặc tư vấn của bác sĩ."
+        )
 st.markdown("<br>", unsafe_allow_html=True)
 # ==============================================================================
 # FOOTER & MODEL EVALUATION SUMMARY

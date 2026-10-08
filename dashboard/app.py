@@ -31,7 +31,7 @@ st.markdown(
     <style>
     .block-container { max-width: 1550px; padding-top: 4rem; padding-bottom: 3rem; }
     .eyebrow {
-        font-size: 0.75rem;
+        font-size: 1.5rem;
         font-weight: 700;
         letter-spacing: 0.1em;
         text-transform: uppercase;

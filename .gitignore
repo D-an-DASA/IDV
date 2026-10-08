@@ -1,5 +1,8 @@
 .vscode
 .venv
+.DS_Store
+.devcontainer
+data/raw
 
 # Build and Release Folders
 bin-debug/

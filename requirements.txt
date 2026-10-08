@@ -1,9 +1,9 @@
 streamlit==1.65.0
-pandas
-numpy
-plotly
+pandas==3.0.6
+numpy==2.5.3
+plotly==7.1.0
 xgboost==3.4.1
-scikit-learn
-joblib
+scikit-learn==1.9.1
+joblib==1.6.0
 ipykernel
-jupyter notebook
+notebook

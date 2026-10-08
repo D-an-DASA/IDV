@@ -8,14 +8,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from sklearn.model_selection import train_test_split
-
+from sklearn.metrics import confusion_matrix
 # ==============================================================================
 # CONFIG & PATHS
 # ==============================================================================
 BASE = Path(__file__).resolve().parent.parent
 CSV = BASE / "data" / "final" / "heart_disease_health_indicators_BRFSS2015_V2.csv"
-MODEL = BASE / "src" / "model" / "XGBoost" / "model_detail" / "xgboost_model.pkl"
-META = BASE / "src" / "model" / "XGBoost" / "model_detail" / "model_metadata.json"
+MODEL = BASE / "src" / "model" / "Logisic Regression" / "model_detail" / "logistic_regression_final.pkl"
+META = BASE / "src" / "model" / "Logisic Regression" / "model_detail" / "model_metadata.json"
 TARGET = "HeartDiseaseorAttack"
 
 st.set_page_config(
@@ -146,14 +146,24 @@ def load():
 
 @st.cache_resource
 def get_model():
-    return joblib.load(MODEL), json.load(open(META, encoding="utf-8"))
+    model_data = joblib.load(MODEL)
 
+    with open(META, encoding="utf-8") as f:
+        meta = json.load(f)
+
+    model = model_data["model"]
+    scaler = model_data["scaler"]
+    features = model_data["features"]
+    threshold = model_data["threshold"]
+
+    return model, scaler, features, threshold, meta
 
 @st.cache_data
 def predict_all():
-    model, meta = get_model()
-    return model.predict_proba(load()[meta["features"]])[:, 1]
-
+    model, scaler, features, _, _ = get_model()
+    X = load()[features]
+    X_scaled = scaler.transform(X)
+    return model.predict_proba(X_scaled)[:, 1]
 
 @st.cache_data
 def get_test_split_indices():
@@ -164,10 +174,9 @@ def get_test_split_indices():
 
 
 data = load()
-model, meta = get_model()
+model, scaler, features, THR, meta = get_model()
 proba = pd.Series(predict_all(), index=data.index)
 test_indices = get_test_split_indices()
-THR = meta["threshold"]
 
 # National baseline benchmark
 NATIONAL_RATE = data[TARGET].mean() * 100
@@ -412,18 +421,23 @@ k = st.columns(5)
 curr_rate = df[TARGET].mean() * 100
 delta_nat = curr_rate - NATIONAL_RATE
 
-k[0].metric("Tổng số bản ghi", f"{len(df):,}", help="Số người tham gia khảo sát phù hợp bộ lọc")
-k[1].metric(
-    "Tỷ lệ bệnh tim mạch",
-    f"{curr_rate:.1f}%",
-    delta=f"{delta_nat:+.1f}% so với toàn quốc",
-    delta_color="inverse",
-    help="Tỷ lệ người mắc bệnh tim hoặc từng đau tim trong mẫu"
-)
-k[2].metric("Nhóm tuổi chiếm ưu thế", str(df.Age_lbl.value_counts().idxmax()),
-            help="Nhóm độ tuổi có số lượng người đông nhất")
-k[3].metric("Chỉ số BMI trung bình", f"{df.BMI.mean():.1f}", help="Chỉ số khối cơ thể trung bình của nhóm")
-k[4].metric("Tỷ lệ tăng huyết áp", f"{df.HighBP.mean() * 100:.1f}%", help="Tỷ lệ người có tiền sử huyết áp cao")
+with k[0].container(height=165):
+    st.metric("Tổng số bản ghi", f"{len(df):,}", help="Số người tham gia khảo sát phù hợp bộ lọc")
+with k[1].container(height=165):
+    st.metric(
+        "Tỷ lệ bệnh tim mạch",
+        f"{curr_rate:.1f}%",
+        delta=f"{delta_nat:+.1f}% so với toàn quốc",
+        delta_color="inverse",
+        help="Tỷ lệ người mắc bệnh tim hoặc từng đau tim trong mẫu"
+    )
+with k[2].container(height=165):
+    st.metric("Nhóm tuổi chiếm ưu thế", str(df.Age_lbl.value_counts().idxmax()),
+              help="Nhóm độ tuổi có số lượng người đông nhất")
+with k[3].container(height=165):
+    st.metric("Chỉ số BMI trung bình", f"{df.BMI.mean():.1f}", help="Chỉ số khối cơ thể trung bình của nhóm")
+with k[4].container(height=165):
+    st.metric("Tỷ lệ tăng huyết áp", f"{df.HighBP.mean() * 100:.1f}%", help="Tỷ lệ người có tiền sử huyết áp cao")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -601,7 +615,7 @@ with r2a.container(border=True):
     st.caption("So sánh tốc độ gia tăng nguy cơ tim mạch theo tuổi thọ giữa người huyết áp cao và bình thường.")
     g_line = (
         df.dropna(subset=["HighBP"])
-        .assign(BP=lambda x: x.HighBP.map({0: "Huyết áp bình thường", 1: "Huyết áp cao"}))
+        .assign(BP=lambda x: x.HighBP.map({0: "Bình thường",1: "Cao"}))
         .groupby(["Age_lbl", "BP"], observed=True)[TARGET]
         .mean()
         .mul(100)
@@ -621,7 +635,17 @@ with r2a.container(border=True):
         marker=dict(size=8),
         hovertemplate="<b>%{x}</b> (%{data.name})<br>Tỷ lệ: %{y:.2f}%<extra></extra>"
     )
-    fig_line.update_layout(legend_title_text="Tình trạng Huyết áp")
+    fig_line.update_layout(
+        legend_title_text="Tình trạng Huyết áp",
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.18,
+            xanchor="center",
+            x=0.5
+        ),
+        margin=dict(b=80)
+    )    
     st.plotly_chart(sty(fig_line, 330), use_container_width=True)
 
 with r2b.container(border=True):
@@ -796,118 +820,469 @@ with r4b.container(border=True):
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
-# SECTION 6: ML PREDICTION & GAUGE INDICATOR (CHARTS 10 & 11)
+# SECTION 6: MINI MODEL PERFORMANCE DASHBOARD
 # ==============================================================================
-st.markdown("### 6. 🤖 Phân tầng Nguy cơ Dân số & Dự đoán Cá nhân hóa (XGBoost)")
-left_ml, right_ml = st.columns([1, 1])
 
-with left_ml.container(border=True):
-    # Chart 10: Risk Histogram Distribution
-    st.markdown("**Phân phối Nguy cơ Dự đoán trên Nhóm Dân số đang chọn**")
-    st.caption(f"Đánh giá rủi ro do mô hình XGBoost dự đoán (Đường đứt nét màu vàng là ngưỡng sàng lọc {THR:.0%}).")
-    p_subset = proba.loc[df.index]
-    fig_risk = px.histogram(
-        p_subset * 100,
-        nbins=50,
-        labels={"value": "Xác suất nguy cơ dự đoán (%)"},
-        color_discrete_sequence=["#ef4444"]
+st.markdown("### 6. 🧠 Đánh giá Mô hình Logistic Regression")
+st.caption(
+    "Kết quả dưới đây được tính trên tập Test độc lập, "
+    "nhằm đánh giá khả năng phân tầng nguy cơ của mô hình."
+)
+
+# --------------------------------------------------------------------------
+# Prepare independent Test set
+# --------------------------------------------------------------------------
+
+test_df = data.loc[list(test_indices)].copy()
+y_test = test_df[TARGET]
+
+# Xác suất dự đoán tương ứng với đúng index của Test set
+p_test = proba.loc[test_df.index]
+
+# Prediction theo ngưỡng sàng lọc hiện tại
+y_pred_test = (p_test >= THR).astype(int)
+
+# --------------------------------------------------------------------------
+# KPI
+# --------------------------------------------------------------------------
+
+m = meta["evaluation"]
+
+mk1, mk2, mk3, mk4 = st.columns(4)
+
+with mk1:
+    st.metric(
+        "Accuracy",
+        f"{m['accuracy']:.1%}",
+        help="Tỷ lệ dự đoán đúng trên tập Test."
     )
-    fig_risk.add_vline(
+
+with mk2:
+    st.metric(
+        "Precision",
+        f"{m['precision']:.1%}",
+        help="Trong các trường hợp được dự đoán là có bệnh tim, tỷ lệ dự đoán đúng."
+    )
+
+with mk3:
+    st.metric(
+        "F1-score",
+        f"{m['f1_score']:.1%}",
+        help="Chỉ số cân bằng giữa Precision và Recall."
+    )
+
+with mk4:
+    st.metric(
+        "Recall",
+        f"{m['recall']:.1%}",
+        help="Trong các trường hợp thực sự có bệnh tim, tỷ lệ được mô hình phát hiện."
+    )
+
+# --------------------------------------------------------------------------
+# Probability Distribution
+# --------------------------------------------------------------------------
+
+c1, c2 = st.columns(2)
+
+with c1.container(border=True):
+
+    st.markdown("**Histogram: Phân phối xác suất dự đoán**")
+
+    hist_df = pd.DataFrame({
+        "Xác suất dự đoán (%)": p_test.values * 100,
+        "Tình trạng thực tế": y_test.map({
+            0: "Không bệnh tim",
+            1: "Bệnh tim"
+        }).values
+    })
+
+    fig_hist_model = px.histogram(
+        hist_df,
+        x="Xác suất dự đoán (%)",
+        color="Tình trạng thực tế",
+        nbins=40,
+        barmode="overlay",
+        opacity=0.65,
+        histnorm="percent",
+        color_discrete_map={
+            "Không bệnh tim": "#38bdf8",
+            "Bệnh tim": "#ef4444"
+        },
+        labels={
+            "Xác suất dự đoán (%)": "Xác suất nguy cơ dự đoán (%)",
+            "Tình trạng thực tế": "Thực tế"
+        }
+    )
+
+    fig_hist_model.add_vline(
         x=THR * 100,
         line_dash="dash",
         line_color="#f59e0b",
         line_width=2.5,
-        annotation_text="Ngưỡng sàng lọc (20%)",
+        annotation_text=f"Ngưỡng {THR:.0%}",
         annotation_position="top right"
     )
-    fig_risk.update_layout(showlegend=False, yaxis_title="Số lượng người")
-    st.plotly_chart(sty(fig_risk, 280), use_container_width=True)
 
-    high_risk_ratio = (p_subset >= THR).mean() * 100
-    st.metric(
-        "Tỷ lệ thuộc Nhóm Nguy cơ Cao (Cần can thiệp)",
-        f"{high_risk_ratio:.1f}%",
-        help="Tỷ lệ người có xác suất dự đoán vượt ngưỡng 20%"
+    fig_hist_model.update_layout(
+        yaxis_title="Tỷ trọng (%)",
+        xaxis_title="Xác suất nguy cơ dự đoán (%)",
+        legend_title="Tình trạng thực tế"
     )
 
-with right_ml.container(border=True):
-    st.markdown("**Công cụ Tính điểm Nguy cơ Cá nhân (Interactive Prediction Form)**")
-    with st.form("predict_form"):
-        fa, fb, fc = st.columns(3)
-        p_sex = fa.selectbox("Giới tính", SEX_ORDER)
-        p_age = fb.selectbox("Độ tuổi", AGE_ORDER, index=6)
-        p_bmi = fc.number_input("Chỉ số BMI", 12.0, 60.0, 27.5, step=0.5)
+    st.plotly_chart(
+        sty(fig_hist_model, 330),
+        use_container_width=True
+    )
 
-        p_edu = fa.selectbox("Học vấn", list(EDU_LBL.values()), index=5)
-        p_inc = fb.selectbox("Thu nhập", list(INC_LBL.values()), index=6)
-        p_dia = fc.selectbox("Tiểu đường", list(DIA_LBL.values()))
 
-        p_gen = fa.select_slider("Sức khỏe tổng quát", list(GEN_LBL.values()), "Tốt")
-        p_ment = fb.slider("Số ngày sức khỏe tinh thần kém (30 ngày qua)", 0, 30, 2)
-        p_phys = fc.slider("Số ngày thể chất kém (30 ngày qua)", 0, 30, 1)
+with c2.container(border=True):
 
-        t_cols = st.columns(4)
-        pred_flags = {
-            "HighBP": t_cols[0].toggle("Huyết áp cao", False),
-            "HighChol": t_cols[1].toggle("Cholesterol cao", False),
-            "CholCheck": t_cols[2].toggle("Đo cholesterol", True),
-            "Smoker": t_cols[3].toggle("Hút thuốc", False),
-            "Stroke": t_cols[0].toggle("Đã từng đột quỵ", False),
-            "DiffWalk": t_cols[1].toggle("Khó khăn khi đi lại", False),
-            "PhysActivity": t_cols[2].toggle("Vận động thể dục", True),
-            "Fruits": t_cols[3].toggle("Ăn trái cây", True),
-            "Veggies": t_cols[0].toggle("Ăn rau xanh", True),
-            "HvyAlcoholConsump": t_cols[1].toggle("Uống nhiều rượu", False),
-            "AnyHealthcare": t_cols[2].toggle("Có BHYT", True),
-            "NoDocbcCost": t_cols[3].toggle("Bỏ khám do chi phí", False),
+    st.markdown("**Violin Plot: Phân bố điểm nguy cơ theo thực tế**")
+
+    violin_df = pd.DataFrame({
+        "Xác suất nguy cơ (%)": p_test.values * 100,
+        "Tình trạng thực tế": y_test.map({
+            0: "Không bệnh tim",
+            1: "Bệnh tim"
+        }).values
+    })
+
+    fig_violin = px.violin(
+        violin_df,
+        x="Tình trạng thực tế",
+        y="Xác suất nguy cơ (%)",
+        color="Tình trạng thực tế",
+        box=True,
+        points=False,
+        color_discrete_map={
+            "Không bệnh tim": "#38bdf8",
+            "Bệnh tim": "#ef4444"
+        },
+        labels={
+            "Tình trạng thực tế": "Tình trạng thực tế",
+            "Xác suất nguy cơ (%)": "Xác suất nguy cơ dự đoán (%)"
         }
-        submit_btn = st.form_submit_button("⚡ Tính toán Điểm Nguy cơ", type="primary", use_container_width=True)
+    )
 
-    if submit_btn:
-        row = {
-            **{k_: int(v) for k_, v in pred_flags.items()},
-            "BMI": p_bmi,
-            "Diabetes": list(DIA_LBL.values()).index(p_dia),
-            "GenHlth": list(GEN_LBL.values()).index(p_gen) + 1,
-            "MentHlth": p_ment,
-            "PhysHlth": p_phys,
-            "Sex": SEX_ORDER.index(p_sex),
-            "Age": AGE_ORDER.index(p_age) + 1,
-            "Education": list(EDU_LBL.values()).index(p_edu) + 1,
-            "Income": list(INC_LBL.values()).index(p_inc) + 1
+    fig_violin.add_hline(
+        y=THR * 100,
+        line_dash="dash",
+        line_color="#f59e0b",
+        line_width=2,
+        annotation_text=f"Ngưỡng {THR:.0%}",
+        annotation_position="top right"
+    )
+
+    fig_violin.update_layout(
+        showlegend=False,
+        yaxis_title="Xác suất nguy cơ dự đoán (%)",
+        xaxis_title=""
+    )
+
+    st.plotly_chart(
+        sty(fig_violin, 330),
+        use_container_width=True
+    )
+
+# --------------------------------------------------------------------------
+# Confusion Matrix + Feature Importance
+# --------------------------------------------------------------------------
+
+c3, c4 = st.columns(2)
+
+with c3.container(border=True):
+
+    st.markdown(
+        f"**Confusion Matrix tại ngưỡng {THR:.0%}**"
+    )
+
+    cm = confusion_matrix(
+        y_test,
+        y_pred_test,
+        labels=[0, 1]
+    )
+
+    cm_df = pd.DataFrame(
+        cm,
+        index=["Thực tế: Không bệnh", "Thực tế: Bệnh"],
+        columns=["Dự đoán: Không bệnh", "Dự đoán: Bệnh"]
+    )
+
+    fig_cm = px.imshow(
+        cm_df,
+        text_auto=",",
+        color_continuous_scale="Reds",
+        aspect="auto",
+        labels={"color": "Số lượng"}
+    )
+
+    fig_cm.update_layout(
+        xaxis_title="Dự đoán",
+        yaxis_title="Thực tế"
+    )
+
+    st.plotly_chart(
+        sty(fig_cm, 330),
+        use_container_width=True
+    )
+
+
+with c4.container(border=True):
+
+    st.markdown("**Hệ số Logistic Regression: Yếu tố ảnh hưởng đến mô hình**")
+
+    importance_df = pd.DataFrame({
+        "Yếu tố": features,
+        "Coefficient": model.coef_[0]
+    }).sort_values(
+        "Coefficient",
+        ascending=True
+    ).tail(10)
+
+    fig_imp = px.bar(
+        importance_df,
+        x="Coefficient",
+        y="Yếu tố",
+        orientation="h",
+        text_auto=".2f",
+        labels={
+            "Coefficient": "Hệ số Logistic Regression",
+            "Yếu tố": "Biến đầu vào"
         }
-        pr = float(model.predict_proba(pd.DataFrame([row])[meta["features"]])[:, 1][0])
+    )
 
-        # Chart 11: Gauge / Indicator Chart
-        fig_gauge = go.Figure(
-            go.Indicator(
-                mode="gauge+number",
-                value=pr * 100,
-                number={"suffix": "%", "valueformat": ".1f"},
-                gauge={
-                    "axis": {"range": [0, 100]},
-                    "bar": {"color": "#ef4444" if pr >= THR else "#22c55e", "thickness": 0.8},
-                    "steps": [
-                        {"range": [0, THR * 100], "color": "rgba(34, 197, 94, 0.2)"},
-                        {"range": [THR * 100, 100], "color": "rgba(239, 68, 68, 0.25)"}
-                    ],
-                    "threshold": {
-                        "line": {"color": "#f59e0b", "width": 4},
-                        "thickness": 0.85,
-                        "value": THR * 100
-                    }
-                }
+    fig_imp.update_layout(
+        yaxis_title="",
+        xaxis_title="Hệ số Logistic Regression",
+        showlegend=False
+    )
+
+    st.plotly_chart(
+        sty(fig_imp, 330),
+        use_container_width=True
+    )
+# ==============================================================================
+# INDIVIDUAL RISK PREDICTION
+# ==============================================================================
+
+st.markdown("### 7. 🩺 Dự đoán nguy cơ cá nhân")
+
+st.caption(
+    "Nhập thông tin sức khỏe và lối sống để mô hình Logistic Regression "
+    "ước tính nguy cơ mắc bệnh tim mạch."
+)
+
+with st.container(border=True):
+
+    # --------------------------------------------------------------------------
+    # INPUT
+    # --------------------------------------------------------------------------
+
+    p1, p2 = st.columns(2)
+
+    with p1:
+        st.markdown("**Tình trạng sức khỏe**")
+
+        high_bp = int(st.toggle("Cao huyết áp"))
+
+        high_chol = int(st.toggle("Cholesterol cao"))
+
+        bmi = st.number_input(
+            "BMI",
+            min_value=12.0,
+            max_value=60.0,
+            value=25.0,
+            step=0.1
+        )
+
+        diabetes = st.selectbox(
+            "Tiểu đường",
+            [0, 1, 2],
+            format_func=lambda x: {
+                0: "Không",
+                1: "Tiền tiểu đường",
+                2: "Có"
+            }[x]
+        )
+
+        gen_hlth = st.selectbox(
+            "Tình trạng sức khỏe tổng quát",
+            [1, 2, 3, 4, 5],
+            format_func=lambda x: {
+                1: "Rất tốt",
+                2: "Tốt",
+                3: "Khá",
+                4: "Kém",
+                5: "Rất kém"
+            }[x]
+        )
+
+        age = st.slider(
+            "Nhóm tuổi",
+            min_value=1,
+            max_value=13,
+            value=7
+        )
+
+        ment_hlth = st.slider(
+            "Số ngày sức khỏe tinh thần không tốt",
+            0,
+            30,
+            0
+        )
+
+        phys_hlth = st.slider(
+            "Số ngày sức khỏe thể chất không tốt",
+            0,
+            30,
+            0
+        )
+
+    with p2:
+        st.markdown("**Lối sống & thông tin cá nhân**")
+
+        smoker = int(st.toggle("Hút thuốc"))
+
+        stroke = int(st.toggle("Tiền sử đột quỵ"))
+
+        phys_activity = int(st.toggle("Hoạt động thể chất"))
+
+        fruits = int(st.toggle("Ăn trái cây thường xuyên"))
+
+        veggies = int(st.toggle("Ăn rau thường xuyên"))
+
+        alcohol = int(st.toggle("Uống rượu bia nhiều"))
+
+        diff_walk = int(st.toggle("Khó khăn khi đi lại"))
+
+        sex = int(
+            st.toggle(
+                "Nam",
+                help="Tắt: Nữ · Bật: Nam"
             )
         )
-        st.plotly_chart(sty(fig_gauge, 190), use_container_width=True)
-        if pr >= THR:
-            st.error(
-                f"⚠️ **Nhóm Nguy cơ Cao ({pr * 100:.1f}%)**: Xác suất vượt ngưỡng {THR * 100:.0%}. Khuyến nghị kiểm tra chuyên sâu tim mạch.")
-        else:
-            st.success(f"✅ **Dưới Ngưỡng Nguy cơ ({pr * 100:.1f}%)**: Chỉ số nằm trong vùng kiểm soát an toàn.")
-        st.caption(
-            "ℹ️ *Kết quả dự đoán có mục đích sàng lọc hỗ trợ quyết định y tế công cộng, không thay thế chẩn đoán bác sĩ.*")
 
+        education = st.selectbox(
+            "Trình độ học vấn",
+            list(range(1, 7))
+        )
+
+        income = st.selectbox(
+            "Mức thu nhập",
+            list(range(1, 9))
+        )
+
+    # --------------------------------------------------------------------------
+    # THRESHOLD
+    # --------------------------------------------------------------------------
+
+    threshold_input = st.slider(
+        "🎚️ Ngưỡng phân loại",
+        min_value=0.10,
+        max_value=0.90,
+        value=THR,
+        step=0.01,
+        format="%.0f%%",
+        help="Ngưỡng mặc định được mô hình lựa chọn là 37%."
+    )
+
+    st.caption(
+        f"⭐ Ngưỡng khuyến nghị của mô hình: **{THR:.0%}** · "
+        f"Ngưỡng đang chọn: **{threshold_input:.0%}**"
+    )
+
+    # --------------------------------------------------------------------------
+    # PREDICT
+    # --------------------------------------------------------------------------
+
+    if st.button(
+        "🔍 Dự đoán nguy cơ",
+        type="primary",
+        use_container_width=True
+    ):
+
+        input_data = pd.DataFrame([{
+            "HighBP": high_bp,
+            "HighChol": high_chol,
+            "CholCheck": 1,
+            "BMI": bmi,
+            "Smoker": smoker,
+            "Stroke": stroke,
+            "Diabetes": diabetes,
+            "PhysActivity": phys_activity,
+            "Fruits": fruits,
+            "Veggies": veggies,
+            "HvyAlcoholConsump": alcohol,
+            "AnyHealthcare": 1,
+            "NoDocbcCost": 0,
+            "GenHlth": gen_hlth,
+            "MentHlth": ment_hlth,
+            "PhysHlth": phys_hlth,
+            "DiffWalk": diff_walk,
+            "Sex": sex,
+            "Age": age,
+            "Education": education,
+            "Income": income
+        }])
+
+        # Đảm bảo đúng thứ tự feature của model
+        input_data = input_data[features]
+
+        # Scaling giống quá trình huấn luyện
+        input_scaled = scaler.transform(input_data)
+
+        # Xác suất thuộc nhóm có bệnh tim
+        risk_probability = model.predict_proba(
+            input_scaled
+        )[0, 1]
+
+        # Phân loại theo threshold người dùng đang chọn
+        prediction = int(
+            risk_probability >= threshold_input
+        )
+
+        st.divider()
+
+        # ----------------------------------------------------------------------
+        # RESULT
+        # ----------------------------------------------------------------------
+
+        risk_percent = risk_probability * 100
+        risk_sections = [
+            ("#22c55e", min(max(risk_percent, 0), 25)),
+            ("#eab308", min(max(risk_percent - 25, 0), 25)),
+            ("#f97316", min(max(risk_percent - 50, 0), 25)),
+            ("#ef4444", min(max(risk_percent - 75, 0), 25)),
+        ]
+        risk_bar = "".join(
+            f'<div style="flex:1;background:#374151;position:relative;">'
+            f'<div style="width:{filled / 25:.6f}%;height:100%;background:{color};"></div>'
+            f'</div>'
+            for color, filled in risk_sections
+        )
+        st.markdown(
+            f"""
+            <div role="img" aria-label="Xác suất nguy cơ {risk_percent:.1f}%">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.5rem;">
+                    <span style="font-weight:600;">Xác suất nguy cơ</span>
+                    <span style="font-size:1.5rem;font-weight:700;">{risk_percent:.1f}%</span>
+                </div>
+                <div style="display:flex;height:18px;overflow:hidden;border-radius:9px;gap:2px;">
+                    {risk_bar}
+                </div>
+                <div style="display:flex;justify-content:space-between;color:#9ca3af;font-size:0.8rem;margin-top:0.3rem;">
+                    <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        if prediction == 1:
+            st.error( f"⚠️ Nguy cơ cao — xác suất {risk_probability:.1%} " f"≥ ngưỡng {threshold_input:.0%}" )
+        else:
+            st.success( f"✅ Nguy cơ thấp — xác suất {risk_probability:.1%} " f"< ngưỡng {threshold_input:.0%}" )
+st.markdown("<br>", unsafe_allow_html=True)
 # ==============================================================================
 # FOOTER & MODEL EVALUATION SUMMARY
 # ==============================================================================
@@ -916,5 +1291,7 @@ f1, f2, f3, f4 = st.columns(4)
 f1.caption(f"📁 Dữ liệu: CDC BRFSS ({len(data):,} hồ sơ)")
 f2.caption(f"🧠 Thuật toán: {meta['model_name']}")
 f3.caption(
-    f"🎯 Chỉ số Test: ROC-AUC {meta['test_metrics']['roc_auc']:.3f} | PR-AUC {meta['test_metrics']['pr_auc']:.3f}")
+    f"🎯 Chỉ số Test: ROC-AUC {meta['evaluation']['roc_auc']:.3f} | "
+    f"PR-AUC {meta['evaluation']['pr_auc']:.3f}"
+)
 f4.caption(f"⚖️ Ngưỡng tối ưu: {THR * 100:.0f}%")

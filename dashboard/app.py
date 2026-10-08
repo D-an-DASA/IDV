@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from sklearn.model_selection import train_test_split
 
 # ==============================================================================
 # CONFIG & PATHS
@@ -62,15 +63,6 @@ st.markdown(
         border-radius: 12px;
         padding: 1.2rem;
         margin-bottom: 1.2rem;
-    }
-    .badge {
-        display: inline-block;
-        padding: 0.25rem 0.6rem;
-        border-radius: 9999px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        background-color: #374151;
-        color: #e5e7eb;
     }
     </style>
     """,
@@ -128,6 +120,8 @@ STATE_CODE_MAP = {
     'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV', 'Wisconsin': 'WI',
     'Wyoming': 'WY', 'Puerto Rico': 'PR', 'Guam': 'GU'
 }
+CODE_TO_STATE = {v: k for k, v in STATE_CODE_MAP.items()}
+
 
 # ==============================================================================
 # DATA LOADING & MODEL CACHING
@@ -135,9 +129,12 @@ STATE_CODE_MAP = {
 @st.cache_data
 def load():
     d = pd.read_csv(CSV)
+    # Fix 3: Ép kiểu HeartDiseaseorAttack sang integer chuẩn xác để tránh lỗi .0 ca
+    d[TARGET] = d[TARGET].fillna(0).astype(int)
     # Cân chỉnh mã giới tính (BRFSS: 1=Nam, 2=Nữ; chuẩn mô hình: 1=Nam, 0=Nữ)
     if 2.0 in d.Sex.values or 2 in d.Sex.values:
         d["Sex"] = d["Sex"].map({2.0: 0, 1.0: 1, 2: 0, 1: 1}).fillna(0).astype(int)
+    # Tiền xử lý BMI hợp lệ từ 12 đến 60
     d = d[d.BMI.isna() | d.BMI.between(12, 60)].reset_index(drop=True)
     d["Age_lbl"] = pd.Categorical(d.Age.map(AGE_LBL), AGE_ORDER, ordered=True)
     d["Sex_lbl"] = d.Sex.map({0: "Nữ", 1: "Nam"})
@@ -146,18 +143,30 @@ def load():
     d["Bệnh tim"] = d[TARGET].map({0: "Không bệnh tim", 1: "Bệnh tim"})
     return d
 
+
 @st.cache_resource
 def get_model():
     return joblib.load(MODEL), json.load(open(META, encoding="utf-8"))
+
 
 @st.cache_data
 def predict_all():
     model, meta = get_model()
     return model.predict_proba(load()[meta["features"]])[:, 1]
 
+
+@st.cache_data
+def get_test_split_indices():
+    # Fix 7: Tái tạo chính xác tập Test độc lập (test_size=0.2, random_state=42, stratify=y)
+    d = load()
+    _, test_idx = train_test_split(d.index, test_size=0.2, random_state=42, stratify=d[TARGET])
+    return set(test_idx)
+
+
 data = load()
 model, meta = get_model()
 proba = pd.Series(predict_all(), index=data.index)
+test_indices = get_test_split_indices()
 THR = meta["threshold"]
 
 # National baseline benchmark
@@ -178,19 +187,28 @@ DEFAULTS = {
     "f_inc": "Tất cả mức thu nhập",
     "f_edu": "Tất cả trình độ",
     "f_bmi": (12.0, 60.0),
+    "f_eval_set": "Toàn bộ dữ liệu dân số",
     "ver": 0
 }
 
 for k, v in DEFAULTS.items():
     st.session_state.setdefault(k, v)
 
+
 def reset():
     ver = st.session_state.ver + 1
     st.session_state.update(DEFAULTS)
     st.session_state.ver = ver
 
-def clear_selection():
+
+def clear_cross_selection():
     st.session_state.ver += 1
+
+
+def reset_state_filter():
+    st.session_state.f_state = "Tất cả các bang"
+    st.session_state.ver += 1
+
 
 with st.sidebar:
     st.markdown("## ❤️ CardioView")
@@ -212,43 +230,63 @@ with st.sidebar:
     st.selectbox("Cholesterol cao", ["Tất cả", "Không", "Có"], key="f_chol")
     st.selectbox("Tiểu đường", ["Tất cả", "Không", "Tiền tiểu đường", "Có"], key="f_dia")
 
-    st.markdown("### 🏃 Cấp 4: Thói quen Lối sống & Thể trạng")
+    st.markdown("### 🏃 Cấp 4: Lối sống & Thể trạng")
     st.selectbox("Hút thuốc", ["Tất cả", "Không", "Có"], key="f_smk")
     st.selectbox("Vận động thể chất", ["Tất cả", "Không", "Có"], key="f_act")
-    st.slider("Chỉ số khối cơ thể (BMI)", 12.0, 60.0, step=0.5, key="f_bmi")
+    st.slider("Chỉ số khối cơ thể (BMI)", 12.0, 60.0, step=0.5, key="f_bmi",
+              help="Dữ liệu đã được làm sạch trong khoảng sinh học hợp lý 12 - 60 kg/m²")
+
+    st.markdown("### 🧪 Phân chia Dữ liệu Đánh giá")
+    st.radio(
+        "Tập dữ liệu hiển thị:",
+        ["Toàn bộ dữ liệu dân số", "Chỉ tập Test độc lập (50,736 mẫu)"],
+        key="f_eval_set",
+        help="Cho phép đánh giá mô hình chuẩn xác trên tập Test độc lập khớp với metadata."
+    )
 
     st.divider()
     st.button("↻ Đặt lại tất cả bộ lọc", use_container_width=True, on_click=reset)
-    
+
     st.caption("TIẾN TRÌNH ĐỘ PHỦ DỮ LIỆU")
+
 
 def yn(d, col, v):
     return d if v == "Tất cả" else d[d[col] == (1 if v == "Có" else 0)]
 
-S = st.session_state
-base = data
 
-# Apply multi-level filters
+S = st.session_state
+
+# Fix 7: Lọc theo tập Test nếu người dùng chọn
+base_data = data
+if S.f_eval_set == "Chỉ tập Test độc lập (50,736 mẫu)":
+    base_data = base_data[base_data.index.isin(test_indices)]
+
+# Fix 4: base_geo giữ nguyên TOÀN BỘ CÁC BANG (chưa lọc theo bang) để bản đồ và Top 5 không bị mất ngữ cảnh
+base_geo = base_data
+if S.f_sex != "Tất cả giới tính":
+    base_geo = base_geo[base_geo.Sex_lbl == S.f_sex]
+if S.f_age != "Tất cả nhóm tuổi":
+    base_geo = base_geo[base_geo.Age.isin(AGE_BINS[S.f_age])]
+if S.f_inc != "Tất cả mức thu nhập":
+    base_geo = base_geo[base_geo.Income.isin(INC_BINS[S.f_inc])]
+if S.f_edu != "Tất cả trình độ":
+    base_geo = base_geo[base_geo.Education.isin(EDU_BINS[S.f_edu])]
+if S.f_dia != "Tất cả":
+    base_geo = base_geo[base_geo.Diabetes == {"Không": 0, "Tiền tiểu đường": 1, "Có": 2}[S.f_dia]]
+
+base_geo = yn(yn(yn(yn(base_geo, "HighBP", S.f_bp), "HighChol", S.f_chol), "Smoker", S.f_smk), "PhysActivity", S.f_act)
+base_geo = base_geo[base_geo.BMI.isna() | base_geo.BMI.between(*S.f_bmi)]
+
+# Áp dụng bộ lọc bang cho tập dữ liệu chi tiết
+base = base_geo
 if S.f_state != "Tất cả các bang":
     base = base[base.StateName == S.f_state]
-if S.f_sex != "Tất cả giới tính":
-    base = base[base.Sex_lbl == S.f_sex]
-if S.f_age != "Tất cả nhóm tuổi":
-    base = base[base.Age.isin(AGE_BINS[S.f_age])]
-if S.f_inc != "Tất cả mức thu nhập":
-    base = base[base.Income.isin(INC_BINS[S.f_inc])]
-if S.f_edu != "Tất cả trình độ":
-    base = base[base.Education.isin(EDU_BINS[S.f_edu])]
-if S.f_dia != "Tất cả":
-    base = base[base.Diabetes == {"Không": 0, "Tiền tiểu đường": 1, "Có": 2}[S.f_dia]]
-
-base = yn(yn(yn(yn(base, "HighBP", S.f_bp), "HighChol", S.f_chol), "Smoker", S.f_smk), "PhysActivity", S.f_act)
-base = base[base.BMI.isna() | base.BMI.between(*S.f_bmi)]
 
 with st.sidebar:
-    cov_ratio = len(base) / len(data)
+    cov_ratio = len(base) / len(base_data)
     st.progress(cov_ratio)
-    st.caption(f"**{len(base):,} / {len(data):,}** bản ghi phù hợp ({cov_ratio * 100:.1f}% tập dữ liệu).")
+    st.caption(f"**{len(base):,} / {len(base_data):,}** bản ghi phù hợp ({cov_ratio * 100:.1f}% tập dữ liệu).")
+
 
 # ==============================================================================
 # CROSS-FILTERING (INTER-CHART LINKAGE)
@@ -257,20 +295,41 @@ def picked(key, order):
     ev = st.session_state.get(key)
     if not ev or "selection" not in ev or not ev["selection"].get("points"):
         return []
-    return [order[p["point_number"]] for p in ev["selection"]["points"] if p.get("point_number") is not None and p["point_number"] < len(order)]
+    return [order[p["point_number"]] for p in ev["selection"]["points"] if
+            p.get("point_number") is not None and p["point_number"] < len(order)]
 
-AGE_KEY, SEX_KEY = f"age_{S.ver}", f"sex_{S.ver}"
+
+AGE_KEY = f"age_{S.ver}"
+SEX_KEY = f"sex_{S.ver}"
+MAP_KEY = f"map_{S.ver}"
+
 age_sel = picked(AGE_KEY, AGE_ORDER)
 sex_sel = picked(SEX_KEY, SEX_ORDER)
+
+# Fix 5: Bắt sự kiện nhấp chuột trực tiếp trên Bản đồ để chọn bang
+map_ev = st.session_state.get(MAP_KEY)
+if map_ev and "selection" in map_ev and map_ev["selection"].get("points"):
+    clicked_pts = map_ev["selection"]["points"]
+    if clicked_pts:
+        clicked_loc = clicked_pts[0].get("location")
+        if clicked_loc and clicked_loc in CODE_TO_STATE:
+            clicked_state_name = CODE_TO_STATE[clicked_loc]
+            if S.f_state != clicked_state_name:
+                st.session_state.f_state = clicked_state_name
+                st.rerun()
+
 
 def by_age(d):
     return d[d.Age_lbl.isin(age_sel)] if age_sel else d
 
+
 def by_sex(d):
     return d[d.Sex_lbl.isin(sex_sel)] if sex_sel else d
 
+
 # Final filtered slice with cross-filter applied
 df = by_sex(by_age(base))
+
 
 # Chart styling helper
 def sty(fig, h=350):
@@ -285,6 +344,7 @@ def sty(fig, h=350):
     )
     return fig
 
+
 def rate_yes_no(d, cols):
     rows = []
     for lbl, s in cols.items():
@@ -292,6 +352,7 @@ def rate_yes_no(d, cols):
             m = d[TARGET][s.reindex(d.index) == v]
             rows.append((lbl, name, m.mean() * 100 if len(m) else np.nan))
     return pd.DataFrame(rows, columns=["Yếu tố", "Tình trạng", "Tỷ lệ bệnh tim (%)"])
+
 
 def yn_bar(d, cols, title):
     fig = px.bar(
@@ -307,15 +368,18 @@ def yn_bar(d, cols, title):
     fig.update_layout(legend_title_text="Tình trạng")
     return sty(fig, 320)
 
+
 # ==============================================================================
 # HEADER & EXECUTIVE KPI SUMMARY
 # ==============================================================================
-st.markdown('<div class="eyebrow">HỆ THỐNG TRỰC QUAN HÓA THÔNG TIN Y TẾ & SỨC KHỎE DÂN SỐ</div>', unsafe_allow_html=True)
-st.markdown('<div class="page-title">Bảng Điều Khiển Phân Tích & Dự Đoán Nguy Cơ Tim Mạch</div>', unsafe_allow_html=True)
+st.markdown('<div class="eyebrow">HỆ THỐNG TRỰC QUAN HÓA THÔNG TIN Y TẾ & SỨC KHỎE DÂN SỐ</div>',
+            unsafe_allow_html=True)
+st.markdown('<div class="page-title">Bảng Điều Khiển Phân Tích & Dự Đoán Nguy Cơ Tim Mạch</div>',
+            unsafe_allow_html=True)
 st.markdown(
     '<div class="sub">Khám phá toàn diện phân bố không gian địa lý, tương quan nhân khẩu học, '
     'bệnh lý lâm sàng, lối sống và phân tầng nguy cơ tim mạch dựa trên Machine Learning. '
-    'Hỗ trợ lọc đa cấp, Drill-down chuyên sâu và Cross-filtering (nhấp vào cột/lát cắt để lọc chéo).</div>',
+    'Hỗ trợ lọc đa cấp, Drill-down Treemap và Cross-filtering (nhấp vào cột/lát cắt/bản đồ để lọc chéo).</div>',
     unsafe_allow_html=True
 )
 
@@ -323,15 +387,25 @@ if len(df) == 0:
     st.warning("⚠️ Không có bản ghi nào phù hợp với điều kiện bộ lọc hiện tại. Vui lòng nới lỏng tiêu chí lọc.")
     st.stop()
 
-if age_sel or sex_sel:
-    c1, c2 = st.columns([5, 1])
-    active_filters = []
-    if age_sel:
-        active_filters.append(f"Nhóm tuổi: {', '.join(age_sel)}")
-    if sex_sel:
-        active_filters.append(f"Giới tính: {', '.join(sex_sel)}")
-    c1.info("🔍 **Đang lọc chéo (Cross-filter):** " + " | ".join(active_filters))
-    c2.button("✕ Bỏ lọc chéo", on_click=clear_selection, use_container_width=True)
+# Hiển thị thông báo trạng thái lọc chéo
+active_cross = []
+if age_sel:
+    active_cross.append(f"Nhóm tuổi: {', '.join(age_sel)}")
+if sex_sel:
+    active_cross.append(f"Giới tính: {', '.join(sex_sel)}")
+
+if active_cross or S.f_state != "Tất cả các bang":
+    c1, c2, c3 = st.columns([4, 1, 1])
+    status_text = []
+    if S.f_state != "Tất cả các bang":
+        status_text.append(f"📍 Bang: **{S.f_state}**")
+    if active_cross:
+        status_text.append(f"🔍 Lọc chéo: **{' | '.join(active_cross)}**")
+    c1.info(" · ".join(status_text))
+    if active_cross:
+        c2.button("✕ Bỏ lọc chéo", on_click=clear_cross_selection, use_container_width=True)
+    if S.f_state != "Tất cả các bang":
+        c3.button("🌐 Xem toàn quốc", on_click=reset_state_filter, use_container_width=True)
 
 # Executive KPI Metrics
 k = st.columns(5)
@@ -346,7 +420,8 @@ k[1].metric(
     delta_color="inverse",
     help="Tỷ lệ người mắc bệnh tim hoặc từng đau tim trong mẫu"
 )
-k[2].metric("Nhóm tuổi chiếm ưu thế", str(df.Age_lbl.value_counts().idxmax()), help="Nhóm độ tuổi có số lượng người đông nhất")
+k[2].metric("Nhóm tuổi chiếm ưu thế", str(df.Age_lbl.value_counts().idxmax()),
+            help="Nhóm độ tuổi có số lượng người đông nhất")
 k[3].metric("Chỉ số BMI trung bình", f"{df.BMI.mean():.1f}", help="Chỉ số khối cơ thể trung bình của nhóm")
 k[4].metric("Tỷ lệ tăng huyết áp", f"{df.HighBP.mean() * 100:.1f}%", help="Tỷ lệ người có tiền sử huyết áp cao")
 
@@ -356,14 +431,18 @@ st.markdown("<br>", unsafe_allow_html=True)
 # SECTION 1: GEOGRAPHIC SPATIAL DISTRIBUTION (MAP REQUIREMENT)
 # ==============================================================================
 with st.container(border=True):
-    st.markdown("### 1. 🗺️ Bản đồ Địa lý: Phân bố Không gian Nguy cơ Tim mạch")
-    st.caption("Biểu đồ Choropleth Map thể hiện sự chênh lệch tỷ lệ mắc bệnh tim mạch trên các bang của Hoa Kỳ. Hỗ trợ xem phân bố toàn cảnh và Drill-down theo từng bang.")
+    st.markdown("### 1. 🗺️ Bản đồ Địa lý: Phân bố Không gian Nguy cơ Tim mạch `[Click để chọn bang]`")
+    st.caption(
+        "Bản đồ Choropleth thể hiện tỷ lệ mắc bệnh tim mạch trên toàn bộ 53 bang/vùng lãnh thổ của Hoa Kỳ. Bấm trực tiếp vào một bang trên bản đồ để lọc dữ liệu.")
 
-    state_agg = df.groupby("StateName", observed=True)[TARGET].agg(
+    # Fix 4: state_agg tính từ base_geo (toàn bộ các bang) để giữ nguyên ngữ cảnh toàn quốc
+    state_agg = base_geo.groupby("StateName", observed=True)[TARGET].agg(
         TongSo="count",
         SoCa="sum",
         TyLe="mean"
     ).reset_index()
+    # Fix 3: Ép kiểu SoCa sang int để không bị hiển thị 1,234.0 ca
+    state_agg["SoCa"] = state_agg["SoCa"].astype(int)
     state_agg["TyLe_pct"] = state_agg["TyLe"] * 100
     state_agg["Code"] = state_agg["StateName"].map(STATE_CODE_MAP)
 
@@ -400,31 +479,40 @@ with st.container(border=True):
             height=430,
             coloraxis_colorbar=dict(title="Tỷ lệ (%)", thickness=14, len=0.7)
         )
-        st.plotly_chart(fig_map, use_container_width=True)
+        # Fix 5: on_select="rerun" cho phép click trực tiếp vào bang trên bản đồ
+        st.plotly_chart(
+            fig_map,
+            key=MAP_KEY,
+            on_select="rerun",
+            selection_mode="points",
+            use_container_width=True
+        )
 
     with drill_col:
-        st.markdown("##### 📍 Phân tích & Xếp hạng Bang")
-        
+        st.markdown("##### 📍 Xếp hạng & So sánh Bang")
+
+        # Fix 4: Luôn hiển thị Top 5 cao nhất và thấp nhất ngay cả khi đã chọn 1 bang
+        rank_tab1, rank_tab2 = st.tabs(["🔴 Top 5 Cao nhất", "🟢 Top 5 Thấp nhất"])
+        with rank_tab1:
+            top_high = state_agg.sort_values(by="TyLe_pct", ascending=False).head(5)
+            for _, r in top_high.iterrows():
+                # Fix 3: int(r['SoCa']) hiển thị chuẩn dạng số nguyên
+                st.markdown(f"**{r['StateName']}**: `{r['TyLe_pct']:.1f}%` ({int(r['SoCa']):,} ca)")
+        with rank_tab2:
+            top_low = state_agg.sort_values(by="TyLe_pct", ascending=True).head(5)
+            for _, r in top_low.iterrows():
+                st.markdown(f"**{r['StateName']}**: `{r['TyLe_pct']:.1f}%` ({int(r['SoCa']):,} ca)")
+
         if S.f_state != "Tất cả các bang":
-            # State Drill-down details
-            st.success(f"**Drill-down:** Đang xem bang **{S.f_state}**")
+            st.divider()
             st_data = state_agg[state_agg.StateName == S.f_state]
             if len(st_data) > 0:
                 st_r = st_data.iloc[0]
-                st.metric("Tỷ lệ tại bang", f"{st_r['TyLe_pct']:.1f}%", delta=f"{st_r['TyLe_pct'] - NATIONAL_RATE:+.1f}% vs Toàn quốc", delta_color="inverse")
-                st.metric("Số ca bệnh tim", f"{st_r['SoCa']:,} / {st_r['TongSo']:,}")
-            else:
-                st.info("Không có dữ liệu cho bang này sau khi lọc.")
-        else:
-            rank_tab1, rank_tab2 = st.tabs(["🔴 Top 5 Cao nhất", "🟢 Top 5 Thấp nhất"])
-            with rank_tab1:
-                top_high = state_agg.sort_values(by="TyLe_pct", ascending=False).head(5)
-                for _, r in top_high.iterrows():
-                    st.markdown(f"**{r['StateName']}**: `{r['TyLe_pct']:.1f}%` ({r['SoCa']:,} ca)")
-            with rank_tab2:
-                top_low = state_agg.sort_values(by="TyLe_pct", ascending=True).head(5)
-                for _, r in top_low.iterrows():
-                    st.markdown(f"**{r['StateName']}**: `{r['TyLe_pct']:.1f}%` ({r['SoCa']:,} ca)")
+                st.markdown(f"**Bang đang chọn: {S.f_state}**")
+                st.metric("Tỷ lệ tại bang", f"{st_r['TyLe_pct']:.1f}%",
+                          delta=f"{st_r['TyLe_pct'] - NATIONAL_RATE:+.1f}% vs Toàn quốc", delta_color="inverse")
+                # Fix 3: int(st_r['SoCa'])
+                st.caption(f"Tổng: {int(st_r['SoCa']):,} ca / {int(st_r['TongSo']):,} bản ghi")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -432,7 +520,8 @@ st.markdown("<br>", unsafe_allow_html=True)
 # SECTION 2: DEMOGRAPHICS & CROSS-FILTERING (CHARTS 2 & 3)
 # ==============================================================================
 st.markdown("### 2. 👥 Nhân khẩu học & Liên kết Lọc chéo (Cross-filtering)")
-st.caption("Nhấp chuột vào một cột Nhóm tuổi hoặc lát cắt Giới tính để kích hoạt liên kết lọc chéo toàn bộ dữ liệu trên bảng điều khiển.")
+st.caption(
+    "Nhấp chuột vào một cột Nhóm tuổi hoặc lát cắt Giới tính để kích hoạt liên kết lọc chéo dữ liệu giữa các biểu đồ.")
 
 r1a, r1b = st.columns(2)
 
@@ -465,10 +554,19 @@ with r1a.container(border=True):
 
 with r1b.container(border=True):
     # Chart 3: Donut / Pie Chart with Cross-filter
-    st.markdown("**Biểu đồ Tròn: Phân bổ ca bệnh tim theo Giới tính** `[Cross-filter]`")
-    st.caption("Bấm chọn lát cắt để lọc chéo theo giới tính")
+    # Fix 6: Ghi rõ đây là Cơ cấu ca bệnh (tỷ trọng %), đồng thời bổ sung Tỷ lệ mắc bệnh trong từng giới
+    st.markdown("**Biểu đồ Tròn: Cơ cấu ca bệnh theo Giới tính** `[Cross-filter]`")
     d_sex = by_age(base)
-    cases_sex = d_sex[d_sex[TARGET] == 1].Sex_lbl.value_counts().reindex(SEX_ORDER).fillna(0)
+    cases_sex = d_sex[d_sex[TARGET] == 1].Sex_lbl.value_counts().reindex(SEX_ORDER).fillna(0).astype(int)
+
+    # Tính tỷ lệ mắc (Prevalence) của từng giới để phân biệt rõ với tỷ trọng ca bệnh
+    fem_sub = d_sex[d_sex.Sex_lbl == "Nữ"]
+    male_sub = d_sex[d_sex.Sex_lbl == "Nam"]
+    fem_prev = (fem_sub[TARGET].mean() * 100) if len(fem_sub) else 0.0
+    male_prev = (male_sub[TARGET].mean() * 100) if len(male_sub) else 0.0
+    st.caption(
+        f"Tỷ lệ mắc trong từng giới: Nam **{male_prev:.1f}%** | Nữ **{fem_prev:.1f}%** (Bấm lát cắt để lọc chéo)")
+
     fig_sex = go.Figure(
         go.Pie(
             labels=SEX_ORDER,
@@ -477,7 +575,7 @@ with r1b.container(border=True):
             sort=False,
             marker=dict(colors=["#f472b6", "#38bdf8"]),
             textinfo="label+percent",
-            hovertemplate="<b>Giới tính: %{label}</b><br>Số ca bệnh tim: %{value:,}<br>Tỷ trọng: %{percent}<extra></extra>"
+            hovertemplate="<b>Giới tính: %{label}</b><br>Số ca bệnh tim: %{value:,}<br>Tỷ trọng ca bệnh: %{percent}<extra></extra>"
         )
     )
     fig_sex.update_layout(legend_title_text="Giới tính")
@@ -494,7 +592,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ==============================================================================
 # SECTION 3: CLINICAL FACTORS, TRENDS & BMI (CHARTS 4, 5, 6)
 # ==============================================================================
-st.markdown("### 3. 🩺 Yếu tố Lâm sàng & Xu hướng Sinh trắc học")
+st.markdown("### 3. 🩺 Yếu tố Lâm sàng & Phân tích Sinh trắc học")
 r2a, r2b = st.columns(2)
 
 with r2a.container(border=True):
@@ -527,11 +625,12 @@ with r2a.container(border=True):
     st.plotly_chart(sty(fig_line, 330), use_container_width=True)
 
 with r2b.container(border=True):
-    # Charts 5 & 6: Histogram & Box Plot with Tabs Drill-down
+    # Charts 5 & 6: Histogram & Box Plot with Tabs
+    # Fix 8: Chuẩn hóa nhãn Tabs là "Chuyển đổi góc nhìn trực quan", giải thích đúng khoảng BMI 12 - 60
     st.markdown("**Phân tích Thể trạng: Chỉ số BMI theo Tình trạng Bệnh tim**")
-    tab_dist, tab_box = st.tabs(["📊 Phân bố tần suất (Histogram)", "📦 Biểu đồ Hộp & Ngoại lai (Box Plot)"])
+    tab_dist, tab_box = st.tabs(["📊 Phân bố tần suất (Histogram)", "📦 Biểu đồ Hộp & Điểm phân vị (Box Plot)"])
     dd_bmi = df.dropna(subset=["BMI"])
-    
+
     with tab_dist:
         # Chart 5: Histogram
         fig_hist = px.histogram(
@@ -547,7 +646,7 @@ with r2b.container(border=True):
         fig_hist.update_layout(
             legend_title_text="Nhóm",
             yaxis_title="% Tỷ trọng trong nhóm",
-            xaxis_title="Chỉ số khối cơ thể (BMI)"
+            xaxis_title="Chỉ số khối cơ thể BMI (kg/m²)"
         )
         st.plotly_chart(sty(fig_hist, 290), use_container_width=True)
 
@@ -564,7 +663,7 @@ with r2b.container(border=True):
         fig_box.update_layout(
             legend_title_text="Nhóm",
             xaxis_title="Tình trạng bệnh tim",
-            yaxis_title="BMI (kg/m²)"
+            yaxis_title="BMI (kg/m²) [Giới hạn hợp lệ 12–60]"
         )
         st.plotly_chart(sty(fig_box, 290), use_container_width=True)
 
@@ -579,7 +678,7 @@ r3a, r3b = st.columns(2)
 with r3a.container(border=True):
     st.markdown("**Gánh nặng Đa bệnh lý & Tương quan Thể trạng**")
     tab_dis, tab_scat = st.tabs(["📊 Các bệnh lý mạn tính liên quan", "🫧 Tương quan Bong bóng (Scatter/Bubble)"])
-    
+
     with tab_dis:
         conds = {
             "Đột quỵ": df.Stroke,
@@ -627,7 +726,8 @@ with r3b.container(border=True):
         "Ăn rau củ": df.Veggies,
         "Uống rượu nhiều": df.HvyAlcoholConsump
     }
-    st.plotly_chart(yn_bar(df, life_factors, "Tỷ lệ bệnh tim giữa nhóm Có vs Không theo lối sống"), use_container_width=True)
+    st.plotly_chart(yn_bar(df, life_factors, "Tỷ lệ bệnh tim giữa nhóm Có vs Không theo lối sống"),
+                    use_container_width=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -638,9 +738,10 @@ st.markdown("### 5. 💰 Kinh tế - Xã hội & Ma trận Tương tác Nguy cơ
 r4a, r4b = st.columns(2)
 
 with r4a.container(border=True):
-    # Chart 8: Treemap with Hierarchical Drill-down
-    st.markdown("**Biểu đồ Cây Phân cấp: Thu nhập × Học vấn (Treemap)** `[Drill-down]`")
-    st.caption("Nhấp vào từng khối Thu nhập để đào sâu (Drill-down) vào các bậc Học vấn bên trong. Kích thước = Số bản ghi, Màu = Tỷ lệ bệnh tim.")
+    # Chart 8: Treemap with Hierarchical Drill-down (Fix 8: Đúng nghĩa Drill-down phân cấp)
+    st.markdown("**Biểu đồ Cây Phân cấp: Thu nhập × Học vấn (Treemap)** `[Drill-down Phân cấp]`")
+    st.caption(
+        "Nhấp chuột vào từng khối Thu nhập để đào sâu (Drill-down) vào các bậc Học vấn bên trong. Kích thước = Số bản ghi, Màu = Tỷ lệ bệnh tim.")
     tm_df = (
         df.groupby(["Inc_lbl", "Edu_lbl"], observed=True)
         .agg(Records=(TARGET, "size"), Rate=(TARGET, "mean"))
@@ -702,8 +803,8 @@ left_ml, right_ml = st.columns([1, 1])
 
 with left_ml.container(border=True):
     # Chart 10: Risk Histogram Distribution
-    st.markdown("**Phân phối Nguy cơ Dự đoán trên Dân số đã chọn**")
-    st.caption(f"Đánh giá rủi ro tổng thể do mô hình XGBoost dự đoán (Đường đứt nét màu vàng là ngưỡng sàng lọc {THR:.0%}).")
+    st.markdown("**Phân phối Nguy cơ Dự đoán trên Nhóm Dân số đang chọn**")
+    st.caption(f"Đánh giá rủi ro do mô hình XGBoost dự đoán (Đường đứt nét màu vàng là ngưỡng sàng lọc {THR:.0%}).")
     p_subset = proba.loc[df.index]
     fig_risk = px.histogram(
         p_subset * 100,
@@ -721,7 +822,7 @@ with left_ml.container(border=True):
     )
     fig_risk.update_layout(showlegend=False, yaxis_title="Số lượng người")
     st.plotly_chart(sty(fig_risk, 280), use_container_width=True)
-    
+
     high_risk_ratio = (p_subset >= THR).mean() * 100
     st.metric(
         "Tỷ lệ thuộc Nhóm Nguy cơ Cao (Cần can thiệp)",
@@ -776,7 +877,7 @@ with right_ml.container(border=True):
             "Income": list(INC_LBL.values()).index(p_inc) + 1
         }
         pr = float(model.predict_proba(pd.DataFrame([row])[meta["features"]])[:, 1][0])
-        
+
         # Chart 11: Gauge / Indicator Chart
         fig_gauge = go.Figure(
             go.Indicator(
@@ -800,10 +901,12 @@ with right_ml.container(border=True):
         )
         st.plotly_chart(sty(fig_gauge, 190), use_container_width=True)
         if pr >= THR:
-            st.error(f"⚠️ **Nhóm Nguy cơ Cao ({pr * 100:.1f}%)**: Xác suất vượt ngưỡng {THR * 100:.0%}. Khuyến nghị kiểm tra chuyên sâu tim mạch.")
+            st.error(
+                f"⚠️ **Nhóm Nguy cơ Cao ({pr * 100:.1f}%)**: Xác suất vượt ngưỡng {THR * 100:.0%}. Khuyến nghị kiểm tra chuyên sâu tim mạch.")
         else:
             st.success(f"✅ **Dưới Ngưỡng Nguy cơ ({pr * 100:.1f}%)**: Chỉ số nằm trong vùng kiểm soát an toàn.")
-        st.caption("ℹ️ *Kết quả dự đoán có mục đích sàng lọc hỗ trợ quyết định y tế công cộng, không thay thế chẩn đoán bác sĩ.*")
+        st.caption(
+            "ℹ️ *Kết quả dự đoán có mục đích sàng lọc hỗ trợ quyết định y tế công cộng, không thay thế chẩn đoán bác sĩ.*")
 
 # ==============================================================================
 # FOOTER & MODEL EVALUATION SUMMARY
@@ -812,5 +915,6 @@ st.divider()
 f1, f2, f3, f4 = st.columns(4)
 f1.caption(f"📁 Dữ liệu: CDC BRFSS ({len(data):,} hồ sơ)")
 f2.caption(f"🧠 Thuật toán: {meta['model_name']}")
-f3.caption(f"🎯 ROC-AUC: {meta['test_metrics']['roc_auc']:.3f} | PR-AUC: {meta['test_metrics']['pr_auc']:.3f}")
+f3.caption(
+    f"🎯 Chỉ số Test: ROC-AUC {meta['test_metrics']['roc_auc']:.3f} | PR-AUC {meta['test_metrics']['pr_auc']:.3f}")
 f4.caption(f"⚖️ Ngưỡng tối ưu: {THR * 100:.0f}%")

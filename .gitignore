@@ -3,6 +3,7 @@
 .DS_Store
 .devcontainer
 data/raw
+data/variable_meaning
 
 # Build and Release Folders
 bin-debug/

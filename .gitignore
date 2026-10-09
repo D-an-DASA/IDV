@@ -4,6 +4,7 @@
 .devcontainer
 data/raw
 data/variable_meaning
+*_with_meanings.csv
 
 # Build and Release Folders
 bin-debug/

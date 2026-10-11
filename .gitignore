@@ -9,6 +9,7 @@ data/variable_meaning
 *.docx
 *.pdf
 *_original_*
+*remove_outliers.csv
 
 # Build and Release Folders
 bin-debug/

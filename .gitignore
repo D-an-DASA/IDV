@@ -5,6 +5,10 @@
 data/raw
 data/variable_meaning
 *_with_meanings.csv
+*.txt
+*.docx
+*.pdf
+*_original_*
 
 # Build and Release Folders
 bin-debug/

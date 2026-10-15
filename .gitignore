@@ -10,6 +10,7 @@ data/variable_meaning
 *.pdf
 *_original_*
 *remove_outliers.csv
+images/
 
 # Build and Release Folders
 bin-debug/

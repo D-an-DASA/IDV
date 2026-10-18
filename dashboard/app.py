@@ -206,7 +206,6 @@ with st.sidebar:
 
     st.divider()
     st.button("↻ Đặt lại tất cả bộ lọc", width="stretch", on_click=reset)
-    st.caption("TIẾN TRÌNH ĐỘ PHỦ DỮ LIỆU")
 
 
 def yn(d, col, v):
@@ -235,12 +234,6 @@ base_geo = base_geo[base_geo.BMI.isna() | base_geo.BMI.between(*S.f_bmi)]
 base = base_geo
 if S.f_state != "Tất cả các bang":
     base = base[base.StateName == S.f_state]
-
-with st.sidebar:
-    cov_ratio = len(base) / max(len(base_data), 1)
-    st.progress(cov_ratio)
-    st.caption(f"**{len(base):,} / {len(base_data):,}** bản ghi phù hợp ({cov_ratio * 100:.1f}% tập dữ liệu).")
-
 
 # ==============================================================================
 # LỌC CHÉO GIỮA CÁC BIỂU ĐỒ

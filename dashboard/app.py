@@ -133,8 +133,6 @@ proba = predict_all()
 NATIONAL_RATE = data[TARGET].mean() * 100
 N_TEST = int(data.is_test.sum())
 N_COMPLETE = int(data.is_complete.sum())
-EVAL_ALL = "Toàn bộ dữ liệu dân số"
-EVAL_TEST = f"Chỉ tập Test độc lập ({N_TEST:,} mẫu)"
 
 # ==============================================================================
 # THANH BÊN: BỘ LỌC ĐA CẤP
@@ -143,7 +141,7 @@ DEFAULTS = {
     "f_state": "Tất cả các bang", "f_sex": "Tất cả giới tính", "f_age": "Tất cả nhóm tuổi",
     "f_bp": ALL, "f_chol": ALL, "f_dia": ALL, "f_smk": ALL, "f_act": ALL,
     "f_inc": "Tất cả mức thu nhập", "f_edu": "Tất cả trình độ",
-    "f_bmi": (12.0, 60.0), "f_eval_set": EVAL_ALL, "ver": 0,
+    "f_bmi": (12.0, 60.0), "ver": 0,
 }
 for k, v in DEFAULTS.items():
     st.session_state.setdefault(k, v)
@@ -206,10 +204,6 @@ with st.sidebar:
     st.slider("Chỉ số khối cơ thể (BMI)", 12.0, 60.0, step=0.5, key="f_bmi",
               help="Chỉ hiển thị BMI trong khoảng sinh học hợp lý 12 - 60 kg/m²")
 
-    st.markdown("### 🧪 Phân chia Dữ liệu Đánh giá")
-    st.radio("Tập dữ liệu hiển thị:", [EVAL_ALL, EVAL_TEST], key="f_eval_set",
-             help="Tập Test được tái tạo đúng như lúc huấn luyện mô hình (80/20, random_state=42).")
-
     st.divider()
     st.button("↻ Đặt lại tất cả bộ lọc", width="stretch", on_click=reset)
     st.caption("TIẾN TRÌNH ĐỘ PHỦ DỮ LIỆU")
@@ -220,7 +214,7 @@ def yn(d, col, v):
 
 
 S = st.session_state
-base_data = data[data.is_test] if S.f_eval_set == EVAL_TEST else data
+base_data = data
 
 # base_geo: áp dụng mọi bộ lọc TRỪ bang, để bản đồ và Top 5 không mất ngữ cảnh toàn quốc
 base_geo = base_data
@@ -278,9 +272,16 @@ df = by_sex(by_age(base))
 def sty(fig, h=350):
     fig.update_layout(
         template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        height=h, margin=dict(l=15, r=15, t=35, b=15), font=dict(family="sans-serif", size=12),
-        legend=dict(orientation="h", y=-0.22, x=0.5, xanchor="center"),
+        height=h, margin=dict(l=15, r=15, t=70, b=90),
+        font=dict(family="sans-serif", size=12),
+        title=dict(font=dict(size=14), y=0.97, yanchor="top"),
+        legend=dict(orientation="h", y=-0.3, yanchor="top", x=0.5, xanchor="center",
+                    title=dict(side="left")),
     )
+    fig.update_xaxes(title_standoff=8, automargin=True)
+    fig.update_yaxes(title_standoff=8, automargin=True)
+    # Rút gọn tên trục tung quá dài để không tràn lên tiêu đề
+    fig.for_each_yaxis(lambda a: a.update(title_text="Tỷ lệ (%)") if a.title.text == RATE else None)
     return fig
 
 
@@ -297,7 +298,7 @@ def yn_bar(d, cols, title):
     fig = px.bar(rate_yes_no(d, cols), x="Yếu tố", y=RATE, color="Tình trạng", barmode="group",
                  title=title, color_discrete_map={"Có": "#ef4444", "Không": "#38bdf8"}, text_auto=".1f")
     fig.update_layout(legend_title_text="Tình trạng")
-    return sty(fig, 320)
+    return sty(fig, 380)
 
 
 # ==============================================================================
@@ -464,10 +465,8 @@ with r2a.container(border=True):
                        color_discrete_map={BP_Y: "#ef4444", BP_N: "#38bdf8"})
     fig_line.update_traces(line=dict(width=3), marker=dict(size=8),
                            hovertemplate="<b>%{x}</b> (%{data.name})<br>Tỷ lệ: %{y:.2f}%<extra></extra>")
-    fig_line.update_layout(legend_title_text="Tình trạng Huyết áp",
-                           legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5),
-                           margin=dict(b=80))
-    st.plotly_chart(sty(fig_line, 330), width="stretch")
+    fig_line.update_layout(legend_title_text="Tình trạng Huyết áp")
+    st.plotly_chart(sty(fig_line, 360), width="stretch")
 
 with r2b.container(border=True):
     st.markdown("**Phân tích Thể trạng: Chỉ số BMI theo Tiền sử bệnh tim/đau tim**")
@@ -479,13 +478,13 @@ with r2b.container(border=True):
                                 histnorm="percent", opacity=0.68, color_discrete_map=cmap)
         fig_hist.update_layout(legend_title_text="Nhóm", yaxis_title="% Tỷ trọng trong nhóm",
                                xaxis_title="Chỉ số khối cơ thể BMI (kg/m²)")
-        st.plotly_chart(sty(fig_hist, 290), width="stretch")
+        st.plotly_chart(sty(fig_hist, 330), width="stretch")
     with tab_box:
         fig_box = px.box(dd_bmi, x="Bệnh tim", y="BMI", color="Bệnh tim", points="outliers",
                          color_discrete_map=cmap)
         fig_box.update_layout(legend_title_text="Nhóm", xaxis_title="Tình trạng tiền sử bệnh tim/đau tim",
                               yaxis_title="BMI (kg/m²) [Giới hạn hiển thị 12–60]")
-        st.plotly_chart(sty(fig_box, 290), width="stretch")
+        st.plotly_chart(sty(fig_box, 330), width="stretch")
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
@@ -513,7 +512,7 @@ with r3a.container(border=True):
             labels={"Rate": RATE, "GH": "Sức khỏe tự đánh giá", "Records": "Số bản ghi", "BMI": "BMI trung bình"},
             category_orders={"GH": list(GEN_LBL.values())},
             title="Tương quan BMI - Tỷ lệ có tiền sử bệnh tim/đau tim theo Nhóm Sức khỏe")
-        st.plotly_chart(sty(fig_scat, 320), width="stretch")
+        st.plotly_chart(sty(fig_scat, 380), width="stretch")
 
 with r3b.container(border=True):
     st.markdown("**Yếu tố Thói quen Lối sống**")
@@ -599,7 +598,7 @@ with c1.container(border=True):
     fig_hm.add_vline(x=THR * 100, line_dash="dash", line_color="#f59e0b", line_width=2.5,
                      annotation_text=f"Ngưỡng {THR:.0%}", annotation_position="top right")
     fig_hm.update_layout(yaxis_title="Tỷ trọng (%)", legend_title="Tình trạng thực tế")
-    st.plotly_chart(sty(fig_hm, 330), width="stretch")
+    st.plotly_chart(sty(fig_hm, 360), width="stretch")
 
 with c2.container(border=True):
     st.markdown("**Violin Plot: Phân bố điểm nguy cơ theo thực tế**")
@@ -609,7 +608,7 @@ with c2.container(border=True):
     fig_vi.add_hline(y=THR * 100, line_dash="dash", line_color="#f59e0b", line_width=2,
                      annotation_text=f"Ngưỡng {THR:.0%}", annotation_position="top right")
     fig_vi.update_layout(showlegend=False, xaxis_title="")
-    st.plotly_chart(sty(fig_vi, 330), width="stretch")
+    st.plotly_chart(sty(fig_vi, 360), width="stretch")
 
 c3, c4 = st.columns(2)
 with c3.container(border=True):
@@ -620,7 +619,7 @@ with c3.container(border=True):
     fig_cm = px.imshow(cm_df, text_auto=",", color_continuous_scale="Reds", aspect="auto",
                        labels={"color": "Số lượng"})
     fig_cm.update_layout(xaxis_title="Dự đoán", yaxis_title="Thực tế")
-    st.plotly_chart(sty(fig_cm, 330), width="stretch")
+    st.plotly_chart(sty(fig_cm, 360), width="stretch")
 
 with c4.container(border=True):
     st.markdown("**Hệ số Logistic Regression: 10 yếu tố tác động mạnh nhất**")
@@ -630,7 +629,7 @@ with c4.container(border=True):
                      color=imp["Hệ số"] > 0, color_discrete_map={True: "#ef4444", False: "#38bdf8"})
     fig_imp.update_layout(yaxis_title="", xaxis_title="Hệ số (dương: tăng nguy cơ, âm: giảm nguy cơ)",
                           showlegend=False)
-    st.plotly_chart(sty(fig_imp, 330), width="stretch")
+    st.plotly_chart(sty(fig_imp, 360), width="stretch")
 
 # ==============================================================================
 # MỤC 7: DỰ ĐOÁN NGUY CƠ CÁ NHÂN

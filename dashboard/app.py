@@ -28,15 +28,28 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
+
+def _is_dark_theme():
+    # Đọc giao diện đang bật (Settings > Theme). Nếu không đọc được thì mặc định tối.
+    try:
+        return st.context.theme.type != "light"
+    except Exception:
+        return True
+
+
+IS_DARK = _is_dark_theme()
+PLOTLY_TPL = "plotly_dark" if IS_DARK else "plotly_white"
+
 st.markdown(
     """
     <style>
     .block-container { max-width: 1550px; padding-top: 4rem; padding-bottom: 3rem; }
     .eyebrow { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.1em;
         text-transform: uppercase; color: #ef4444; margin-bottom: 0.2rem; }
-    .page-title { font-size: 2.1rem; font-weight: 800; color: #f3f4f6; margin-bottom: 0.2rem; }
-    .sub { color: #9ca3af; font-size: 0.92rem; margin-bottom: 1.2rem; line-height: 1.5; }
-    [data-testid=stMetric] { background: rgba(31, 41, 55, 0.6); border: 1px solid #374151;
+    .page-title { font-size: 2.1rem; font-weight: 800; color: inherit; margin-bottom: 0.2rem; }
+    .sub { color: inherit; opacity: 0.7; font-size: 0.92rem; margin-bottom: 1.2rem; line-height: 1.5; }
+    [data-testid=stMetric] { background: rgba(128, 128, 128, 0.12); border: 1px solid rgba(128, 128, 128, 0.35);
         border-radius: 12px; padding: 0.9rem 1.1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
     </style>
     """,
@@ -264,7 +277,7 @@ df = by_sex(by_age(base))
 
 def sty(fig, h=350):
     fig.update_layout(
-        template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        template=PLOTLY_TPL, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         height=h, margin=dict(l=15, r=15, t=70, b=90),
         font=dict(family="sans-serif", size=12),
         title=dict(font=dict(size=14), y=0.97, yanchor="top"),
@@ -373,7 +386,7 @@ with st.container(border=True):
         )
         fig_map.update_layout(
             geo=dict(bgcolor="rgba(0,0,0,0)", lakecolor="rgba(255,255,255,0.05)"),
-            template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            template=PLOTLY_TPL, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             margin=dict(l=0, r=0, t=10, b=0), height=430,
             coloraxis_colorbar=dict(title="Tỷ lệ (%)", thickness=14, len=0.7),
         )
@@ -679,7 +692,7 @@ with st.container(border=True):
                     ("#f97316", min(max(risk_percent - 50, 0), 25)),
                     ("#ef4444", min(max(risk_percent - 75, 0), 25))]
         risk_bar = "".join(
-            f'<div style="flex:1;background:#374151;position:relative;">'
+            f'<div style="flex:1;background:rgba(128,128,128,0.35);position:relative;">'
             f'<div style="width:{filled / 25 * 100:.2f}%;height:100%;background:{color};"></div></div>'
             for color, filled in sections)
         st.markdown(
@@ -690,7 +703,7 @@ with st.container(border=True):
                     <span style="font-size:1.5rem;font-weight:700;">{risk_percent:.1f}%</span>
                 </div>
                 <div style="display:flex;height:18px;overflow:hidden;border-radius:9px;gap:2px;">{risk_bar}</div>
-                <div style="display:flex;justify-content:space-between;color:#9ca3af;font-size:0.8rem;margin-top:0.3rem;">
+                <div style="display:flex;justify-content:space-between;color:inherit;opacity:0.7;font-size:0.8rem;margin-top:0.3rem;">
                     <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
                 </div>
             </div>
